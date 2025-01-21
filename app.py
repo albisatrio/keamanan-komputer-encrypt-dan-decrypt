@@ -103,10 +103,12 @@ def upload_file():
     with open(secret_key_path, 'wb') as f:
         f.write(encrypted_secret_key + b'\n' + hashed_password.encode('utf-8'))
 
-    return jsonify({
-        'message': 'File encrypted and stored successfully.',
-        'private_key_path': private_key_path
-    })
+    # Provide the private key as a downloadable file
+    return send_file(private_key_path, as_attachment=True, download_name=f'private_key_{filename}.pem')
+
+@app.route('/success')
+def success():
+    return render_template('success.html')
 
 @app.route('/download', methods=['POST'])
 def download_file():
