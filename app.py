@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, send_file, jsonify
+from flask import Flask, request, render_template, send_file, jsonify, redirect, url_for, session
 from werkzeug.utils import secure_filename
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
@@ -10,6 +10,7 @@ import random
 
 # Initialize Flask app
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(16)  # Key untuk session
 
 # Directory to store uploads
 UPLOAD_FOLDER = 'uploads'
@@ -70,6 +71,7 @@ def rsa_decrypt(encrypted_key, private_key):
             label=None
         )
     )
+# (Kode helper functions tetap sama...)
 
 @app.route('/')
 def index():
@@ -81,12 +83,18 @@ def upload_file():
     password = request.form['password']
     secret_key = secrets.token_bytes(32)  # Generate AES key
 
+     # Tambahkan 7 digit kode random ke nama file
+    random_suffix = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyzQWERTYUIOPLKJHGFDSAZXCVBNM', k=7))
+    filename, file_extension = os.path.splitext(file.filename)
+    new_filename = f"{filename}{random_suffix}{file_extension}"
+    encrypted_path = os.path.join(UPLOAD_FOLDER, new_filename)
+
     # Encrypt the file
     encrypted_data = aes_encrypt(file.read(), secret_key)
 
     # Save encrypted file
-    filename = secure_filename(file.filename)
-    encrypted_path = os.path.join(UPLOAD_FOLDER, filename)
+     # Save encrypted file with the new filename
+    encrypted_path = os.path.join(UPLOAD_FOLDER, new_filename)  # Use new_filename
     with open(encrypted_path, 'wb') as f:
         f.write(encrypted_data)
 
@@ -99,16 +107,31 @@ def upload_file():
 
     # Save encrypted secret key and hashed password
     hashed_password = hash_password(password)
-    secret_key_path = os.path.join(UPLOAD_FOLDER, f'{filename}.key')
+    secret_key_path = os.path.join(UPLOAD_FOLDER, f'{new_filename}.key')
     with open(secret_key_path, 'wb') as f:
         f.write(encrypted_secret_key + b'\n' + hashed_password.encode('utf-8'))
 
-    # Provide the private key as a downloadable file
-    return send_file(private_key_path, as_attachment=True, download_name=f'private_key_{filename}.pem')
+    # Simpan informasi file di session
+    session['private_key_path'] = private_key_path
+    session['new_filename'] = new_filename
+
+    # Redirect ke halaman sukses
+    return redirect(url_for('success'))
 
 @app.route('/success')
 def success():
-    return render_template('success.html')
+    if 'private_key_path' not in session:
+        return redirect(url_for('index'))  # Jika tidak ada data di session, kembali ke index
+    return render_template('success.html', new_filename=session['new_filename'])
+
+@app.route('/download_key', methods=['POST'])
+def download_key():
+    if 'private_key_path' not in session:
+        return redirect(url_for('index'))
+    private_key_path = session.pop('private_key_path', None)  # Hapus dari session setelah download
+    if private_key_path and os.path.exists(private_key_path):
+        return send_file(private_key_path, as_attachment=True)
+    return "File private key tidak ditemukan.", 404
 
 @app.route('/download', methods=['POST'])
 def download_file():
@@ -132,14 +155,14 @@ def download_file():
             key_data = f.read().split(b'\n', 1)
 
         if len(key_data) != 2:
-            return jsonify({'error': 'Invalid key file format.'}), 400
+            return render_template('gagal.html')
 
         encrypted_secret_key = key_data[0]
         stored_hashed_password = key_data[1].decode('utf-8')
 
         # Verify password
         if hashed_password != stored_hashed_password:
-            return jsonify({'error': 'Invalid password. Decryption aborted.'}), 403
+            return render_template('gagal.html')
 
         # Decrypt secret key
         secret_key = rsa_decrypt(encrypted_secret_key, private_key)
@@ -161,9 +184,9 @@ def download_file():
         )
 
     except UnicodeDecodeError:
-        return jsonify({'error': 'Failed to decode stored password. Possible corruption in key file.'}), 400
+        return render_template('gagal.html')
     except Exception as e:
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        return render_template('gagal.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
