@@ -150,12 +150,15 @@ def download_file():
             encrypted_data = f.read()
         decrypted_data = aes_decrypt(encrypted_data, secret_key)
 
-        # Serve the decrypted file
-        decrypted_path = os.path.join(UPLOAD_FOLDER, f'decrypted_{filename}')
-        with open(decrypted_path, 'wb') as f:
-            f.write(decrypted_data)
-
-        return send_file(decrypted_path, as_attachment=True)
+        # Send the decrypted file directly to the user without saving
+        return (
+            decrypted_data,
+            200,
+            {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': f'attachment; filename="decrypted_{filename}"'
+            }
+        )
 
     except UnicodeDecodeError:
         return jsonify({'error': 'Failed to decode stored password. Possible corruption in key file.'}), 400
