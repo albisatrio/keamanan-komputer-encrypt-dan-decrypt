@@ -140,7 +140,7 @@ def download_file():
     private_key_file = request.files['private_key']
 
     try:
-        # Load private key
+        # Load private key hanya sekali
         private_key = serialization.load_pem_private_key(
             private_key_file.read(),
             password=None
@@ -155,14 +155,14 @@ def download_file():
             key_data = f.read().split(b'\n', 1)
 
         if len(key_data) != 2:
-            return render_template('gagal.html')
+            return render_template('gagal.html', error="Invalid key file format")
 
         encrypted_secret_key = key_data[0]
         stored_hashed_password = key_data[1].decode('utf-8')
 
         # Verify password
         if hashed_password != stored_hashed_password:
-            return render_template('gagal.html')
+            return render_template('gagal.html', error="Incorrect password")
 
         # Decrypt secret key
         secret_key = rsa_decrypt(encrypted_secret_key, private_key)
@@ -184,9 +184,11 @@ def download_file():
         )
 
     except UnicodeDecodeError:
-        return render_template('gagal.html')
+        return render_template('gagal.html', error="Failed to decode password or key file.")
     except Exception as e:
-        return render_template('gagal.html')
+        # Log the error for debugging purposes
+        print(f"Error during decryption: {str(e)}")
+        return render_template('gagal.html', error=f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
     app.run(debug=True)
