@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enkripsi & Dekripsi File</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f2f5;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .box {
+            background-color: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h2 {
+            color: #1565c0;
+            margin-top: 0;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        input[type="file"],
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .generate {
+            background-color: #1565c0;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0d47a1;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: #d32f2f;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .success {
+            color: #388e3c;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        #downloadEncrypted,
+        #downloadDecrypted {
+            display: none;
+            margin-top: 10px;
+        }
+
+        button {
+            background-color: #1565c0;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #0d47a1;
+        }
+
+        input[type="text"] {
+            padding: 10px;
+            width: 300px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .copy-button {
+            background-color: #4caf50;
+        }
+
+        .copy-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+
+
+    <div class="container">
+        <!-- Kotak Enkripsi -->
+        <div class="box">
+            <h2>Website Enkripsi dan Dekripsi File</h2>
+            <div class="input-group">
+                <label for="fileToEncrypt">Pilih File (Maks. 5MB):</label>
+                <input type="file" id="fileToEncrypt">
+                <div id="encryptError" class="error"></div>
+            </div>
+            <div class="input-group">
+                <label for="encryptKey">Secret Key:</label>
+                <input type="password" id="encryptKey">
+            </div>
+            <button onclick="handleEncryption()">Submit</button>
+            <button id="downloadEncrypted" onclick="downloadEncryptedFile()">Download File Terenkripsi</button>
+        </div>
+
+        <!-- Kotak Dekripsi -->
+        <div class="box">
+            <h2>Dekripsi File</h2>
+            <div class="input-group">
+                <label for="fileToDecrypt">Pilih File .encr (Maks. 5MB):</label>
+                <input type="file" id="fileToDecrypt" accept=".encr">
+                <div id="decryptError" class="error"></div>
+            </div>
+            <div class="input-group">
+                <label for="decryptKey">Secret Key:</label>
+                <input type="password" id="decryptKey">
+            </div>
+            <button onclick="handleDecryption()">Submit</button>
+            <button id="downloadDecrypted" onclick="downloadDecryptedFile()">Download File Asli</button>
+        </div>
+    </div><br>
+    <div class="box">
+    <p>Untuk meningkatkan keamanan, silahkan generate Secret Key di sini dan tambahkan karakter pilihan anda sendiri</p>
+    <button class="generat" onclick="generateRandomKey()">Generate 20 digit Random Key</button>
+    <br>
+
+    <div class="output"><br>
+        <input type="text" id="output" placeholder="Key akan ditampilkan di sini">
+    </div>
+
+    <button class="copy-button" onclick="copyToClipboard()">Copy Key</button>
+    </div>
+    <script>
+        // Variabel global untuk menyimpan hasil enkripsi/dekripsi
+        let encryptedData = null;
+        let decryptedData = null;
+        let originalFileName = '';
+
+        // Fungsi untuk mengecek ukuran file
+        function validateFileSize(file) {
+            const maxSize = 5 * 1024 * 1024; // 5MB dalam bytes
+            return file.size <= maxSize;
+        }
+
+        // Fungsi untuk mengkonversi string ke array bytes
+        function stringToBytes(str) {
+            const bytes = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        // Fungsi untuk membuat key dari password
+        async function generateKey(password) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            return crypto.subtle.importKey(
+                'raw',
+                hash,
+                { name: 'AES-GCM' },
+                false,
+                ['encrypt', 'decrypt']
+            );
+        }
+
+        // Fungsi untuk enkripsi file
+        async function handleEncryption() {
+            const fileInput = document.getElementById('fileToEncrypt');
+            const keyInput = document.getElementById('encryptKey');
+            const errorDiv = document.getElementById('encryptError');
+            const downloadButton = document.getElementById('downloadEncrypted');
+
+            errorDiv.textContent = '';
+            downloadButton.style.display = 'none';
+
+            // Validasi input
+            if (!fileInput.files.length || !keyInput.value) {
+                errorDiv.textContent = 'Mohon pilih file dan masukkan secret key';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            originalFileName = file.name;
+
+            // Validasi ukuran file
+            if (!validateFileSize(file)) {
+                errorDiv.textContent = 'Ukuran file melebihi 5MB';
+                return;
+            }
+
+            try {
+                // Baca file sebagai ArrayBuffer
+                const fileData = await file.arrayBuffer();
+                
+                // Generate key dari password
+                const key = await generateKey(keyInput.value);
+                
+                // Generate IV (Initialization Vector)
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                
+                // Enkripsi data
+                const encryptedContent = await crypto.subtle.encrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    fileData
+                );
+
+                // Gabungkan IV dan hasil enkripsi
+                const resultArray = new Uint8Array(iv.length + encryptedContent.byteLength);
+                resultArray.set(iv);
+                resultArray.set(new Uint8Array(encryptedContent), iv.length);
+
+                encryptedData = resultArray;
+                downloadButton.style.display = 'block';
+            } catch (error) {
+                errorDiv.textContent = 'Terjadi kesalahan saat enkripsi: ' + error.message;
+            }
+        }
+
+        // Fungsi untuk dekripsi file
+        async function handleDecryption() {
+            const fileInput = document.getElementById('fileToDecrypt');
+            const keyInput = document.getElementById('decryptKey');
+            const errorDiv = document.getElementById('decryptError');
+            const downloadButton = document.getElementById('downloadDecrypted');
+
+            errorDiv.textContent = '';
+            downloadButton.style.display = 'none';
+
+            // Validasi input
+            if (!fileInput.files.length || !keyInput.value) {
+                errorDiv.textContent = 'Mohon pilih file dan masukkan secret key';
+                return;
+            }
+
+            const file = fileInput.files[0];
+
+            // Validasi ukuran file
+            if (!validateFileSize(file)) {
+                errorDiv.textContent = 'Ukuran file melebihi 5MB';
+                return;
+            }
+
+            // Validasi ekstensi file
+            if (!file.name.endsWith('.encr')) {
+                errorDiv.textContent = 'File harus berformat .encr';
+                return;
+            }
+
+            try {
+                // Baca file sebagai ArrayBuffer
+                const fileData = await file.arrayBuffer();
+                const dataArray = new Uint8Array(fileData);
+
+                // Pisahkan IV dan data terenkripsi
+                const iv = dataArray.slice(0, 12);
+                const encryptedContent = dataArray.slice(12);
+
+                // Generate key dari password
+                const key = await generateKey(keyInput.value);
+
+                // Dekripsi data
+                const decryptedContent = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    encryptedContent
+                );
+
+                decryptedData = decryptedContent;
+                downloadButton.style.display = 'block';
+            } catch (error) {
+                errorDiv.textContent = 'Secret key salah atau file rusak';
+            }
+        }
+
+        // Fungsi untuk download file terenkripsi
+        function downloadEncryptedFile() {
+            if (!encryptedData) return;
+
+            const blob = new Blob([encryptedData], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = originalFileName + '.encr';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Fungsi untuk download file hasil dekripsi
+        function downloadDecryptedFile() {
+            if (!decryptedData) return;
+
+            const blob = new Blob([decryptedData], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Hapus ekstensi .encr dari nama file
+            const fileName = document.getElementById('fileToDecrypt').files[0].name;
+            a.download = fileName.slice(0, -5); // Hapus '.encr'
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+    <script>
+        function generateRandomKey() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+[]{}|;:,.<>?';
+            let randomKey = '';
+            for (let i = 0; i < 20; i++) {
+                const randomIndex = Math.floor(Math.random() * chars.length);
+                randomKey += chars[randomIndex];
+            }
+
+            // Tampilkan random key di textbox
+            document.getElementById('output').value = randomKey;
+        }
+
+        function copyToClipboard() {
+            const output = document.getElementById('output');
+            output.select();
+            output.setSelectionRange(0, 99999); // Untuk perangkat mobile
+
+            // Salin teks ke clipboard
+            document.execCommand('copy');
+
+            // Berikan feedback setelah salin
+            alert("Key telah disalin: " + output.value);
+        }
+    </script>
+</body>
+</html>

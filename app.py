@@ -18,6 +18,16 @@ PRIVATE_KEY_FOLDER = 'keys'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PRIVATE_KEY_FOLDER, exist_ok=True)
 
+# Utility to clean up keys folder
+def clear_keys_folder():
+    for filename in os.listdir(PRIVATE_KEY_FOLDER):
+        file_path = os.path.join(PRIVATE_KEY_FOLDER, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            print(f"Failed to delete {file_path}: {e}")
+
 # Generate a new RSA key pair and save it to a file with a unique name
 def generate_private_key_file():
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -79,6 +89,8 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    clear_keys_folder()
+
     file = request.files['file']
     password = request.form['password']
     secret_key = secrets.token_bytes(32)  # Generate AES key
@@ -133,14 +145,19 @@ def download_key():
         return send_file(private_key_path, as_attachment=True)
     return "File private key tidak ditemukan.", 404
 
+@app.route('/aes')
+def aes():
+    return render_template('aes.html')
+
 @app.route('/download', methods=['POST'])
 def download_file():
+
     filename = request.form['filename']
     password = request.form['password']
     private_key_file = request.files['private_key']
 
     try:
-        # Load private key hanya sekali
+        # Load private key
         private_key = serialization.load_pem_private_key(
             private_key_file.read(),
             password=None
@@ -149,31 +166,39 @@ def download_file():
         # Hash password
         hashed_password = hash_password(password)
 
-        # Load encrypted secret key and hashed password
+        # Load encrypted secret key dan hashed password
         secret_key_path = os.path.join(UPLOAD_FOLDER, f'{filename}.key')
+        if not os.path.exists(secret_key_path):
+            return jsonify({'error': 'Key file not found.'}), 404
+        
         with open(secret_key_path, 'rb') as f:
-            key_data = f.read().split(b'\n', 1)
-
+            key_data = f.read().split(b'\n', 1)  # Split hanya pada satu newline pertama
+        
+        # Validasi format key file
         if len(key_data) != 2:
-            return render_template('gagal.html', error="Invalid key file format")
+            return jsonify({'error': 'Invalid key file format.'}), 400
 
         encrypted_secret_key = key_data[0]
         stored_hashed_password = key_data[1].decode('utf-8')
 
-        # Verify password
+        # Verifikasi password
         if hashed_password != stored_hashed_password:
-            return render_template('gagal.html', error="Incorrect password")
+            return render_template('gagal.html')
 
-        # Decrypt secret key
+        # Dekripsi secret key
         secret_key = rsa_decrypt(encrypted_secret_key, private_key)
 
-        # Load and decrypt the file
+        # Load dan decrypt file terenkripsi
         encrypted_path = os.path.join(UPLOAD_FOLDER, filename)
+        if not os.path.exists(encrypted_path):
+            return render_template('gagal.html')
+
         with open(encrypted_path, 'rb') as f:
             encrypted_data = f.read()
+
         decrypted_data = aes_decrypt(encrypted_data, secret_key)
 
-        # Send the decrypted file directly to the user without saving
+        # Kirim file hasil dekripsi ke pengguna
         return (
             decrypted_data,
             200,
@@ -184,11 +209,9 @@ def download_file():
         )
 
     except UnicodeDecodeError:
-        return render_template('gagal.html', error="Failed to decode password or key file.")
+        return render_template('gagal.html')
     except Exception as e:
-        # Log the error for debugging purposes
-        print(f"Error during decryption: {str(e)}")
-        return render_template('gagal.html', error=f"An error occurred: {str(e)}")
+        return render_template('gagal.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
